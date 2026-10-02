@@ -1,6 +1,6 @@
 # Antigravity Enterprise Gateway — Official LiteLLM Proxy Edition
 
-Deploy a production-grade **LiteLLM Proxy** on **Google Cloud Run** for **Antigravity IDE** and the **`agy` CLI** with **one command**.
+Deploy **LiteLLM Proxy** on **Google Cloud Run** for **Antigravity CLI `agy`** with **one command**.
 
 This repository deploys the **official [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy)** (`ghcr.io/berriai/litellm`, pinned to v1.105.0) configured for Antigravity's Google GenAI wire protocol (`/v1beta/models/{model}:streamGenerateContent?alt=sse`). There is no custom proxy server to maintain.
 
@@ -58,7 +58,7 @@ That's it. The script is idempotent, so it's safe to re-run at any time. It:
 
 ---
 
-### Step 2: Connect Antigravity IDE & `agy` CLI
+### Step 2: Connect Antigravity CLI
 
 Copy the generated `admin_settings.json` to your OS enterprise settings path:
 
@@ -80,7 +80,7 @@ Copy the generated `admin_settings.json` to your OS enterprise settings path:
   Copy-Item admin_settings.json "$env:ProgramData\Antigravity\admin_settings.json"
   ```
 
-Restart Antigravity IDE, or test right away from your terminal with `agy`:
+Restart Antigravity, or test right away from your terminal with `agy`:
 
 ```bash
 agy --model gemini-3.8-flash -p "Write a Python binary search implementation"
@@ -96,7 +96,7 @@ agy --model claude-sonnet-5  -p "Write a Python binary search implementation"
 Here is how a request is authenticated, step by step:
 
 ```
-Antigravity IDE / agy
+Antigravity CLI
    │  reads gateway.apiKey from admin_settings.json
    │  sends:  Authorization: Bearer <apiKey>
    ▼
@@ -121,7 +121,7 @@ No Google credentials ever leave GCP or reach the developer's machine.
 | **Transport** | HTTPS only (Cloud Run managed TLS). |
 
 ### Why not IAP?
-Cloud Run supports [Identity-Aware Proxy](https://cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run). However, IAP requires each client to obtain a short-lived Google OIDC token per user, and Antigravity's gateway setting sends a **static** API key (`apiKey` + optional `customHeaders`). An IAP-protected gateway would reject the IDE. API-key auth at the LiteLLM layer is the supported model for this integration.
+Cloud Run supports [Identity-Aware Proxy](https://cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run). However, IAP requires each client to obtain a short-lived Google OIDC token per user, and Antigravity's gateway setting sends a **static** API key (`apiKey` + optional `customHeaders`). An IAP-protected gateway would reject the CLI. API-key auth at the LiteLLM layer is the supported model for this integration.
 
 ### Rotating the API key
 ```bash
@@ -143,7 +143,7 @@ This stores the new key as the latest Secret Manager version, rolls out a new Cl
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                Developer Workstation (Antigravity IDE / agy)            │
+│                Developer Workstation (Antigravity CLI)            │
 │  Reads /etc/antigravity/admin_settings.json (wireProtocol: "genai")     │
 └───────────────────────────────────┬─────────────────────────────────────┘
                                     │ HTTPS POST /v1beta/models/{model}:streamGenerateContent?alt=sse
