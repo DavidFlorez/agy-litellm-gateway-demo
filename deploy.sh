@@ -298,15 +298,20 @@ ACTIVE_MODELS=()
 INACTIVE_MODELS=()
 
 for m in ${PROBE_MODELS[@]+"${PROBE_MODELS[@]}"}; do
+  # Probe with fallbacks=[] and num_retries=0 so a model with 0 quota or not enabled
+  # in Model Garden cannot silently fall back to another model and report ACTIVE.
   HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 25 -X POST \
-    "${SERVICE_URL}/v1beta/models/${m}:generateContent" \
+    "${SERVICE_URL}/v1/chat/completions" \
     -H "Authorization: Bearer ${ACTIVE_API_KEY}" \
     -H "Content-Type: application/json" \
-    -d '{"contents":[{"role":"user","parts":[{"text":"Reply OK"}]}]}' || true)
+    -d "{\"model\":\"${m}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply OK\"}],\"max_tokens\":5,\"fallbacks\":[],\"num_retries\":0}" || true)
   HTTP_CODE="${HTTP_CODE:-000}"
   if [[ "$HTTP_CODE" == "200" ]]; then
     ACTIVE_MODELS+=("$m")
     echo -e "  ${GREEN}✓ ACTIVE:${NC}       ${BOLD}${m}${NC} (verified on Vertex AI / GEAP)"
+  elif [[ "$HTTP_CODE" == "429" ]]; then
+    INACTIVE_MODELS+=("$m")
+    echo -e "  ${YELLOW}○ INACTIVE:${NC}     ${BOLD}${m}${NC} (HTTP 429 — enabled in Model Garden, but quota is 0 or exhausted in ${PROJECT_ID}; skipping from client list)"
   else
     INACTIVE_MODELS+=("$m")
     echo -e "  ${YELLOW}○ INACTIVE:${NC}     ${BOLD}${m}${NC} (HTTP ${HTTP_CODE} — not enabled in Model Garden; skipping from client list)"
@@ -319,10 +324,10 @@ done
 
 if [[ "${#INACTIVE_MODELS[@]}" -gt 0 ]]; then
   echo -e ""
-  echo -e "  ${YELLOW}Note:${NC} To enable inactive Partner models (${INACTIVE_MODELS[*]}):"
-  echo -e "    1. Open Model Garden (Vertex AI / GEAP): ${BOLD}https://console.cloud.google.com/vertex-ai/model-garden?project=${PROJECT_ID}${NC}"
-  echo -e "    2. Search for the model card and click ${BOLD}Enable${NC}."
-  echo -e "    3. Refresh your local config in ~5s (no redeploy needed): ${BOLD}./deploy.sh --project ${PROJECT_ID} --service ${SERVICE_NAME} --sync-models${NC}"
+  echo -e "  ${YELLOW}Note:${NC} To activate inactive Partner models (${INACTIVE_MODELS[*]}):"
+  echo -e "    • If HTTP 404/403: enable the model card in Model Garden: ${BOLD}https://console.cloud.google.com/vertex-ai/model-garden?project=${PROJECT_ID}${NC}"
+  echo -e "    • If HTTP 429: request non-zero quota for the base model in IAM & Admin → Quotas: ${BOLD}https://console.cloud.google.com/iam-admin/quotas?project=${PROJECT_ID}${NC}"
+  echo -e "    • Then refresh your local config in ~5s (no redeploy needed): ${BOLD}./deploy.sh --project ${PROJECT_ID} --service ${SERVICE_NAME} --sync-models${NC}"
 fi
 
 if [[ "${#NOT_DEPLOYED_MODELS[@]}" -gt 0 ]]; then

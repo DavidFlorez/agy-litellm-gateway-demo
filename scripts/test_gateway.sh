@@ -100,28 +100,30 @@ CLAUDE_STATUS="${CLAUDE_STATUS:-000}"
 CLAUDE_OUT=$(cat "${TMP_DIR}/sonnet.out" 2>/dev/null || true)
 if [[ "$CLAUDE_STATUS" == "200" ]] && echo "$CLAUDE_OUT" | grep -q '"finishReason"[[:space:]]*:[[:space:]]*"STOP"'; then
   pass "Claude Sonnet 5 GenAI-to-Anthropic SSE streaming succeeded"
-elif [[ "$CLAUDE_STATUS" == "404" || "$CLAUDE_STATUS" == "403" ]]; then
-  echo -e "  \033[1;33m○ SKIP:\033[0m Claude Sonnet 5 is not yet enabled in Model Garden (Vertex AI / GEAP) (HTTP ${CLAUDE_STATUS})"
+elif [[ "$CLAUDE_STATUS" == "404" || "$CLAUDE_STATUS" == "403" || "$CLAUDE_STATUS" == "429" ]]; then
+  echo -e "  \033[1;33m○ SKIP:\033[0m Claude Sonnet 5 is not active in Model Garden / Quotas (HTTP ${CLAUDE_STATUS})"
 else
   fail "Claude Sonnet 5 streaming failed (HTTP ${CLAUDE_STATUS}): ${CLAUDE_OUT}"
 fi
 
-# 7. Claude Opus 5 GenAI Streaming Check (via LiteLLM GoogleGenAIAdapter)
-OPUS_STATUS=$(curl -s -o "${TMP_DIR}/opus.out" -w "%{http_code}" -N -X POST \
-  "${GW_URL}/v1beta/models/claude-opus-5:streamGenerateContent?alt=sse" \
-  -H "Authorization: Bearer ${API_KEY}" \
-  -H "x-goog-api-key: dummy_api_key" \
-  -H "Content-Type: application/json" \
-  -d '{"contents":[{"role":"user","parts":[{"text":"Reply with the single word PONG."}]}]}' || true)
-OPUS_STATUS="${OPUS_STATUS:-000}"
-OPUS_OUT=$(cat "${TMP_DIR}/opus.out" 2>/dev/null || true)
-if [[ "$OPUS_STATUS" == "200" ]] && echo "$OPUS_OUT" | grep -q '"finishReason"[[:space:]]*:[[:space:]]*"STOP"'; then
-  pass "Claude Opus 5 GenAI-to-Anthropic SSE streaming succeeded"
-elif [[ "$OPUS_STATUS" == "404" || "$OPUS_STATUS" == "403" ]]; then
-  echo -e "  \033[1;33m○ SKIP:\033[0m Claude Opus 5 is not yet enabled in Model Garden (Vertex AI / GEAP) (HTTP ${OPUS_STATUS})"
-else
-  fail "Claude Opus 5 streaming failed (HTTP ${OPUS_STATUS}): ${OPUS_OUT}"
-fi
+# 7. Claude Opus 5 & 5.5 GenAI Streaming Check (via LiteLLM GoogleGenAIAdapter)
+for opus_model in claude-opus-5 claude-opus-5-5; do
+  OPUS_STATUS=$(curl -s -o "${TMP_DIR}/${opus_model}.out" -w "%{http_code}" -N -X POST \
+    "${GW_URL}/v1beta/models/${opus_model}:streamGenerateContent?alt=sse" \
+    -H "Authorization: Bearer ${API_KEY}" \
+    -H "x-goog-api-key: dummy_api_key" \
+    -H "Content-Type: application/json" \
+    -d '{"contents":[{"role":"user","parts":[{"text":"Reply with the single word PONG."}]}]}' || true)
+  OPUS_STATUS="${OPUS_STATUS:-000}"
+  OPUS_OUT=$(cat "${TMP_DIR}/${opus_model}.out" 2>/dev/null || true)
+  if [[ "$OPUS_STATUS" == "200" ]] && echo "$OPUS_OUT" | grep -q '"finishReason"[[:space:]]*:[[:space:]]*"STOP"'; then
+    pass "${opus_model} GenAI-to-Anthropic SSE streaming succeeded"
+  elif [[ "$OPUS_STATUS" == "404" || "$OPUS_STATUS" == "403" || "$OPUS_STATUS" == "429" ]]; then
+    echo -e "  \033[1;33m○ SKIP:\033[0m ${opus_model} is not active in Model Garden / Quotas (HTTP ${OPUS_STATUS})"
+  else
+    fail "${opus_model} streaming failed (HTTP ${OPUS_STATUS}): ${OPUS_OUT}"
+  fi
+done
 
 # 8. Claude Tool Calling with Antigravity Protojson Schema ("minItems": "1", uppercase types)
 if [[ "$CLAUDE_STATUS" == "200" ]]; then

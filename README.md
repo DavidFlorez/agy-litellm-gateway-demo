@@ -125,8 +125,8 @@ Step 6 of `deploy.sh` prints one line per model in `config.yaml`:
 
 | Status | Meaning | What to do |
 | :--- | :--- | :--- |
-| `✓ ACTIVE` | Enabled and answered a test request. Written to your client files. | Nothing |
-| `○ INACTIVE` | Listed in `config.yaml`, but the project can't use it yet. Usually not enabled in Model Garden. Can also mean the Model ID is wrong, or a temporary 429/5xx. | Enable it in Model Garden, then `--sync-models`. If it stays inactive, check that the `model_name` matches the **Model ID** on the Model Garden card exactly. |
+| `✓ ACTIVE` | Enabled, has quota, and answered a direct test request (with fallbacks disabled). Written to your client files. | Nothing |
+| `○ INACTIVE` | Listed in `config.yaml`, but the project can't serve it yet: `HTTP 404/403` means not enabled in Model Garden (or wrong Model ID); `HTTP 429` means enabled in Model Garden, but your GCP project has `0` quota (or exhausted quota) for that base model. | For `404/403`: enable it in Model Garden. For `429`: request quota in **IAM & Admin → Quotas**. Then run `--sync-models`. |
 | `✗ NOT DEPLOYED` | *(only with `--sync-models`)* It's in your local `config.yaml` but not in the running gateway, because you edited the file after the last full deploy. | Run a full `./deploy.sh` |
 
 ### What if a model in `config.yaml` isn't enabled?
@@ -338,7 +338,7 @@ Claude checks show `○ SKIP` instead of failing when that model isn't enabled i
 | :--- | :--- | :--- |
 | **`agy models` shows consumer models (`claude-sonnet-4-6`, `gpt-oss-120b-medium`) instead of yours** | `admin_settings.json` was installed root-only (`0600`), or `gateway.env` wasn't sourced in this shell | `sudo install -m 644 admin_settings.json /etc/antigravity/admin_settings.json && source gateway.env` |
 | **Enabled a model in Model Garden, but it's missing after `--sync-models`** | It isn't in the **deployed** `config.yaml`. Either it was never added, or it was added locally after the last full deploy (`✗ NOT DEPLOYED`). | Add the exact Model ID to `config.yaml`, run a full `./deploy.sh`, then re-install the client files |
-| **A model stays `○ INACTIVE` even though it's enabled** | `model_name` / `model` in `config.yaml` doesn't match the Model ID on the Model Garden card, or a temporary 429/5xx | Fix the ID and run a full deploy, or simply re-run `--sync-models` |
+| **A model stays `○ INACTIVE` even though it's enabled** | Either `HTTP 429` (enabled in Model Garden, but the project has `0` quota for that base model—common for gated preview models like `claude-fable-5`) or `HTTP 404` (`model_name` doesn't match the Model Garden card ID) | For `429`: request quota for `online_prediction_requests_per_base_model` in **IAM & Admin → Quotas**, then `--sync-models`. For `404`: fix the ID in `config.yaml` and run a full deploy. |
 | **`model X is not recognized as a known model or custom model in settings`** | `gateway.env` isn't sourced, or the model was inactive when `gateway.env` was generated | `source gateway.env`. If the model is missing from `AGY_LLM_GATEWAY_MODELS`, enable it and run `--sync-models`. |
 | **`--model gemini-3.8-flash requires --effort`** | Gemini 3.x in `agy` needs a thinking tier | Use `gemini-3.8-flash-low` / `-medium` / `-high`, or add `--effort low`. Claude models don't need it. |
 | **Claude returns `404` / `403`** | Model not enabled in your project's Model Garden | Enable it on the [Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) card |

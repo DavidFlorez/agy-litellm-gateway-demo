@@ -182,9 +182,12 @@ router_settings:
     sonnet-5: claude-sonnet-5
     opus-5: claude-opus-5
     opus-5-5: claude-opus-5-5
+    opus-5.5: claude-opus-5-5
+    claude-opus-5.5: claude-opus-5-5
     fable-5: claude-fable-5
     claude-sonnet-5-thinking: claude-sonnet-5
     claude-opus-5-thinking: claude-opus-5
+    claude-opus-5-5-thinking: claude-opus-5-5
 
   # Automatic fallback chains if a model group hits quota (429) or transient 5xx.
   # Only include models here that are enabled in your project.
@@ -193,6 +196,9 @@ router_settings:
         - gemini-3.7-flash
     - gemini-3.1-pro-preview:
         - gemini-3.8-flash
+    - claude-opus-5-5:
+        - claude-opus-5
+        - claude-sonnet-5
     - claude-opus-5:
         - claude-sonnet-5
 
