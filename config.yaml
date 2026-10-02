@@ -1,22 +1,28 @@
 # =============================================================================
-# Antigravity Enterprise Gateway — Official LiteLLM Proxy Configuration
+# Antigravity Enterprise Gateway — LiteLLM Proxy Configuration
 # =============================================================================
 # Docs: https://docs.litellm.ai/docs/proxy/configs
 #
-# Antigravity IDE and the `agy` CLI communicate using the Google GenAI protocol:
+# The Antigravity CLI (`agy`) talks to the gateway using the Google GenAI protocol:
 #   POST /v1beta/models/{model}:streamGenerateContent?alt=sse
 #   POST /v1beta/models/{model}:generateContent
 #
 # LiteLLM Proxy natively exposes these endpoints:
-#   - Vertex AI Gemini models (`vertex_ai/gemini-*`) are routed natively.
-#   - Vertex AI Partner models (`vertex_ai/claude-*`) and third-party providers
-#     (`openai/*`, `anthropic/*`, `bedrock/*`) are automatically translated
-#     between Google GenAI format and Chat Completions / Messages format.
+#   - Vertex AI / GEAP Gemini models (`vertex_ai/gemini-*`) are routed natively.
+#   - Vertex AI / GEAP Partner models (`vertex_ai/claude-*`) and third-party
+#     providers (`openai/*`, `anthropic/*`, `bedrock/*`, ...) are automatically
+#     translated between Google GenAI format and Chat Completions / Messages format.
+#
+# (GEAP = Gemini Enterprise Agent Platform, formerly Vertex AI. LiteLLM still uses
+#  the `vertex_ai/` provider prefix and `vertex_*` parameter names.)
+#
+# IMPORTANT: this file is baked into the Cloud Run container image. Any change
+# here (adding / removing a model) needs a full `./deploy.sh` (not --sync-models).
 # =============================================================================
 
 model_list:
   # ---------------------------------------------------------------------------
-  # 1. Google Vertex AI — Gemini Models (Global Endpoint)
+  # 1. Vertex AI / GEAP — Gemini Models (Global Endpoint)
   #    Auto-enabled when `aiplatform.googleapis.com` is enabled by deploy.sh.
   #    No Model Garden activation step is required for Gemini models.
   # ---------------------------------------------------------------------------
@@ -39,16 +45,20 @@ model_list:
       vertex_location: global
 
   # ---------------------------------------------------------------------------
-  # 2. Google Vertex AI — Anthropic Claude Partner Models (Global Endpoint)
+  # 2. Vertex AI / GEAP — Anthropic Claude Partner Models (Global Endpoint)
   #    IMPORTANT: Each Claude model below MUST be enabled once in your GCP
-  #    project's Vertex AI Model Garden before Vertex AI will serve it:
+  #    project's Model Garden before it can be served:
   #      https://console.cloud.google.com/vertex-ai/model-garden
   #
   #    During `./deploy.sh`, each model in `model_list` is probed automatically:
   #      - Models enabled in Model Garden are marked ACTIVE and written to
   #        `admin_settings.json` and `gateway.env`.
   #      - Models not yet enabled in Model Garden (HTTP 404/403) are skipped
-  #        from the client config until you enable them.
+  #        from the client config until you enable them. Because they are
+  #        already listed here, enabling them later only needs --sync-models.
+  #
+  #    Tip: it's fine to list models you haven't enabled yet; that is what
+  #    makes the fast `--sync-models` path work for them later.
   # ---------------------------------------------------------------------------
   - model_name: claude-sonnet-5
     litellm_params:
@@ -62,13 +72,26 @@ model_list:
       vertex_project: os.environ/GCP_PROJECT_ID
       vertex_location: global
 
+  - model_name: claude-opus-5-5
+    litellm_params:
+      model: vertex_ai/claude-opus-5-5
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: claude-fable-5
+    litellm_params:
+      model: vertex_ai/claude-fable-5
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
   # ---------------------------------------------------------------------------
-  # 3. Optional: Additional Vertex AI Gemini & Model Garden Models
+  # 3. Optional: Additional Vertex AI / GEAP Gemini & Model Garden Models
   #    To add another model (e.g. Claude 4.6, Haiku 4.5, Gemini 2.5 Pro/Flash):
   #      1. If it is a Partner model (Claude, Llama, etc.), enable it in
-  #         Vertex AI Model Garden for your project.
-  #      2. Uncomment (or add) its block below.
-  #      3. Re-run `./deploy.sh --project YOUR_GCP_PROJECT_ID`.
+  #         Model Garden for your project.
+  #      2. Uncomment (or add) its block below. Use the exact Model ID shown on
+  #         the Model Garden card.
+  #      3. Re-run `./deploy.sh --project YOUR_GCP_PROJECT_ID` (full deploy).
   # ---------------------------------------------------------------------------
   # - model_name: gemini-2.5-pro
   #   litellm_params:
@@ -101,14 +124,28 @@ model_list:
   #     vertex_location: global
 
   # ---------------------------------------------------------------------------
-  # 4. Optional: Third-Party Providers (Uncomment to enable OpenAI / Bedrock)
+  # 4. Optional: External (non-GCP) Providers — Anthropic API, OpenAI, Bedrock...
+  #    Out of scope for this repo's turnkey flow, but LiteLLM supports 100+
+  #    providers: https://docs.litellm.ai/docs/providers
+  #    To wire one in:
+  #      1. Store the provider API key in Secret Manager and grant
+  #         `antigravity-gateway-sa` `roles/secretmanager.secretAccessor` on it.
+  #      2. Add it to `--set-secrets` in deploy.sh (e.g. ANTHROPIC_API_KEY=anthropic-api-key:latest).
+  #      3. Uncomment / add the model below and run a full `./deploy.sh`.
+  #    The probe, admin_settings.json and gateway.env generation work the same way.
+  #    Note: traffic to these providers leaves GCP and is billed by that provider.
   # ---------------------------------------------------------------------------
-  # - model_name: gpt-4o
+  # - model_name: anthropic-claude-sonnet-5      # Anthropic API (direct)
+  #   litellm_params:
+  #     model: anthropic/claude-sonnet-5
+  #     api_key: os.environ/ANTHROPIC_API_KEY
+  #
+  # - model_name: gpt-4o                          # OpenAI API (direct)
   #   litellm_params:
   #     model: openai/gpt-4o
   #     api_key: os.environ/OPENAI_API_KEY
   #
-  # - model_name: bedrock-claude-sonnet
+  # - model_name: bedrock-claude-sonnet           # AWS Bedrock
   #   litellm_params:
   #     model: bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0
   #     aws_region_name: us-east-1
@@ -144,6 +181,8 @@ router_settings:
     # Claude shorthand & thinking aliases
     sonnet-5: claude-sonnet-5
     opus-5: claude-opus-5
+    opus-5-5: claude-opus-5-5
+    fable-5: claude-fable-5
     claude-sonnet-5-thinking: claude-sonnet-5
     claude-opus-5-thinking: claude-opus-5
 

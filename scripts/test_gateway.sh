@@ -101,7 +101,7 @@ CLAUDE_OUT=$(cat "${TMP_DIR}/sonnet.out" 2>/dev/null || true)
 if [[ "$CLAUDE_STATUS" == "200" ]] && echo "$CLAUDE_OUT" | grep -q '"finishReason"[[:space:]]*:[[:space:]]*"STOP"'; then
   pass "Claude Sonnet 5 GenAI-to-Anthropic SSE streaming succeeded"
 elif [[ "$CLAUDE_STATUS" == "404" || "$CLAUDE_STATUS" == "403" ]]; then
-  echo -e "  \033[1;33m○ SKIP:\033[0m Claude Sonnet 5 is not yet enabled in Vertex AI Model Garden (HTTP ${CLAUDE_STATUS})"
+  echo -e "  \033[1;33m○ SKIP:\033[0m Claude Sonnet 5 is not yet enabled in Model Garden (Vertex AI / GEAP) (HTTP ${CLAUDE_STATUS})"
 else
   fail "Claude Sonnet 5 streaming failed (HTTP ${CLAUDE_STATUS}): ${CLAUDE_OUT}"
 fi
@@ -118,7 +118,7 @@ OPUS_OUT=$(cat "${TMP_DIR}/opus.out" 2>/dev/null || true)
 if [[ "$OPUS_STATUS" == "200" ]] && echo "$OPUS_OUT" | grep -q '"finishReason"[[:space:]]*:[[:space:]]*"STOP"'; then
   pass "Claude Opus 5 GenAI-to-Anthropic SSE streaming succeeded"
 elif [[ "$OPUS_STATUS" == "404" || "$OPUS_STATUS" == "403" ]]; then
-  echo -e "  \033[1;33m○ SKIP:\033[0m Claude Opus 5 is not yet enabled in Vertex AI Model Garden (HTTP ${OPUS_STATUS})"
+  echo -e "  \033[1;33m○ SKIP:\033[0m Claude Opus 5 is not yet enabled in Model Garden (Vertex AI / GEAP) (HTTP ${OPUS_STATUS})"
 else
   fail "Claude Opus 5 streaming failed (HTTP ${OPUS_STATUS}): ${OPUS_OUT}"
 fi

@@ -1,5 +1,5 @@
 # =============================================================================
-# Antigravity Enterprise Gateway — Official LiteLLM Proxy Container
+# Antigravity Enterprise Gateway — LiteLLM Proxy Container (upstream open-source image)
 # =============================================================================
 # The base image is PINNED to an exact, verified digest (LiteLLM v1.105.0) so
 # every customer deployment is reproducible. `main-latest` moves several times a
@@ -11,12 +11,12 @@ FROM ${LITELLM_IMAGE}
 
 WORKDIR /app
 
-# Copy official LiteLLM Proxy configuration and Antigravity protojson callback
+# Copy LiteLLM Proxy configuration and Antigravity protojson callback
 COPY config.yaml /app/config.yaml
 COPY callbacks.py /app/callbacks.py
 
 ENV PORT=8080
 EXPOSE 8080
 
-# Launch the official LiteLLM Proxy server (`litellm --config /app/config.yaml --port 8080`)
+# Launch the LiteLLM Proxy server (`litellm --config /app/config.yaml --port 8080`)
 CMD ["--config", "/app/config.yaml", "--port", "8080"]

@@ -18,11 +18,13 @@
 # What this script does automatically:
 #   0. Pre-flight checks (required tools, gcloud login)
 #   1. Resolves the target GCP project
-#   2. Enables required GCP APIs (Cloud Run, Vertex AI, Cloud Build, Secret Manager)
+#   2. Enables required GCP APIs (Cloud Run, Vertex AI / GEAP, Cloud Build, Secret Manager)
 #   3. Creates a dedicated least-privilege IAM Service Account
 #   4. Stores (or generates) the gateway API key in Google Cloud Secret Manager
-#   5. Deploys the official LiteLLM Proxy container to Cloud Run
-#   6. Probes every model in `config.yaml` to check Vertex AI / Model Garden activation
+#   5. Deploys the upstream open-source LiteLLM Proxy container to Cloud Run
+#   6. Probes every model in `config.yaml` to check Vertex AI / GEAP Model Garden activation
+#      (with --sync-models, it also warns if local config.yaml has models the running
+#      gateway doesn't know about yet, because config.yaml is baked into the container)
 #   7. Generates `admin_settings.json` and `gateway.env` with ONLY the active models
 #   8. Runs end-to-end verification tests (Health, Auth, Gemini, Claude, Tool Calls)
 #
@@ -79,7 +81,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo -e "${BLUE}${BOLD}======================================================================${NC}"
-echo -e "${BLUE}${BOLD}   Antigravity Enterprise Gateway — Official LiteLLM Proxy Deploy     ${NC}"
+echo -e "${BLUE}${BOLD}   Antigravity Enterprise Gateway — LiteLLM Proxy on Cloud Run        ${NC}"
 echo -e "${BLUE}${BOLD}======================================================================${NC}"
 
 # 0. Pre-flight checks
@@ -100,7 +102,7 @@ fi
 gcloud projects describe "$PROJECT_ID" --format="value(projectId)" >/dev/null 2>&1 \
   || die "Project '${PROJECT_ID}' not found or ${ACTIVE_ACCOUNT} has no access to it."
 
-echo -e "${GREEN}[1/8] Target GCP Project:${NC} ${BOLD}${PROJECT_ID}${NC} as ${ACTIVE_ACCOUNT} (Cloud Run: ${CLOUD_RUN_REGION}, Vertex AI: ${VERTEX_LOCATION})"
+echo -e "${GREEN}[1/8] Target GCP Project:${NC} ${BOLD}${PROJECT_ID}${NC} as ${ACTIVE_ACCOUNT} (Cloud Run: ${CLOUD_RUN_REGION}, Vertex AI / GEAP: ${VERTEX_LOCATION})"
 
 wait_for_health() {
   local code=""
@@ -204,9 +206,9 @@ else
     --project="$PROJECT_ID" \
     --quiet >/dev/null
 
-  # 5. Deploy Official LiteLLM Proxy Container to Cloud Run
-  echo -e "${GREEN}[5/8] Building and deploying official LiteLLM Proxy (${SERVICE_NAME}) to Cloud Run (~3-5 min)...${NC}"
-  # Network access is public (the IDE must reach it from anywhere); every model
+  # 5. Deploy the LiteLLM Proxy Container (upstream open-source image) to Cloud Run
+  echo -e "${GREEN}[5/8] Building and deploying LiteLLM Proxy (${SERVICE_NAME}) to Cloud Run (~3-5 min)...${NC}"
+  # Network access is public (the CLI must reach it from anywhere); every model
   # request is authenticated by LiteLLM using the API key from Secret Manager.
   gcloud run deploy "$SERVICE_NAME" \
     --source . \
@@ -247,8 +249,11 @@ else
   fi
 fi
 
-# 6. Probe Model Activation Status in Vertex AI / Model Garden
-echo -e "${GREEN}[6/8] Checking model activation status in Vertex AI / Model Garden (${PROJECT_ID})...${NC}"
+# 6. Probe Model Activation Status in Vertex AI / GEAP Model Garden
+#    Only models listed under `model_list` in config.yaml are probed. Model Garden has
+#    no "list everything I enabled" API, so a model enabled there but missing from
+#    config.yaml will never show up until it is added to config.yaml and redeployed.
+echo -e "${GREEN}[6/8] Checking activation of models listed in config.yaml on Vertex AI / GEAP Model Garden (${PROJECT_ID})...${NC}"
 mapfile -t CONFIGURED_MODELS < <(
   awk '/^[[:space:]]*-[[:space:]]*model_name:[[:space:]]*/ {
     line=$0
@@ -261,10 +266,38 @@ mapfile -t CONFIGURED_MODELS < <(
 
 [[ "${#CONFIGURED_MODELS[@]}" -gt 0 ]] || die "No models found under 'model_list' in config.yaml."
 
+PROBE_MODELS=("${CONFIGURED_MODELS[@]}")
+NOT_DEPLOYED_MODELS=()
+
+# --sync-models reuses the running container, whose config.yaml was baked in at the
+# last full deploy. Detect local edits that were never deployed (e.g. a newly added
+# Claude model) so they're reported accurately instead of as "not enabled".
+if [[ "$SYNC_MODELS_ONLY" == "true" ]]; then
+  DEPLOYED_JSON=$(curl -s --max-time 15 "${SERVICE_URL}/v1/models" \
+    -H "Authorization: Bearer ${ACTIVE_API_KEY}" || true)
+  mapfile -t DEPLOYED_MODELS < <(
+    printf '%s' "$DEPLOYED_JSON" \
+      | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' \
+      | sed 's/.*"\([^"]*\)"$/\1/'
+  )
+  if [[ "${#DEPLOYED_MODELS[@]}" -gt 0 ]]; then
+    PROBE_MODELS=()
+    for m in "${CONFIGURED_MODELS[@]}"; do
+      if printf '%s\n' "${DEPLOYED_MODELS[@]}" | grep -qxF -- "$m"; then
+        PROBE_MODELS+=("$m")
+      else
+        NOT_DEPLOYED_MODELS+=("$m")
+      fi
+    done
+  else
+    echo -e "  ${YELLOW}Warning:${NC} could not read the deployed model list (${SERVICE_URL}/v1/models); probing local config.yaml as-is."
+  fi
+fi
+
 ACTIVE_MODELS=()
 INACTIVE_MODELS=()
 
-for m in "${CONFIGURED_MODELS[@]}"; do
+for m in ${PROBE_MODELS[@]+"${PROBE_MODELS[@]}"}; do
   HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 25 -X POST \
     "${SERVICE_URL}/v1beta/models/${m}:generateContent" \
     -H "Authorization: Bearer ${ACTIVE_API_KEY}" \
@@ -273,24 +306,36 @@ for m in "${CONFIGURED_MODELS[@]}"; do
   HTTP_CODE="${HTTP_CODE:-000}"
   if [[ "$HTTP_CODE" == "200" ]]; then
     ACTIVE_MODELS+=("$m")
-    echo -e "  ${GREEN}✓ ACTIVE:${NC}   ${BOLD}${m}${NC} (verified on Vertex AI)"
+    echo -e "  ${GREEN}✓ ACTIVE:${NC}       ${BOLD}${m}${NC} (verified on Vertex AI / GEAP)"
   else
     INACTIVE_MODELS+=("$m")
-    echo -e "  ${YELLOW}○ INACTIVE:${NC} ${BOLD}${m}${NC} (HTTP ${HTTP_CODE} — not enabled in Vertex AI Model Garden; skipping from client list)"
+    echo -e "  ${YELLOW}○ INACTIVE:${NC}     ${BOLD}${m}${NC} (HTTP ${HTTP_CODE} — not enabled in Model Garden; skipping from client list)"
   fi
+done
+
+for m in ${NOT_DEPLOYED_MODELS[@]+"${NOT_DEPLOYED_MODELS[@]}"}; do
+  echo -e "  ${RED}✗ NOT DEPLOYED:${NC} ${BOLD}${m}${NC} (in local config.yaml, but not in the running gateway yet)"
 done
 
 if [[ "${#INACTIVE_MODELS[@]}" -gt 0 ]]; then
   echo -e ""
   echo -e "  ${YELLOW}Note:${NC} To enable inactive Partner models (${INACTIVE_MODELS[*]}):"
-  echo -e "    1. Open Vertex AI Model Garden: ${BOLD}https://console.cloud.google.com/vertex-ai/model-garden?project=${PROJECT_ID}${NC}"
+  echo -e "    1. Open Model Garden (Vertex AI / GEAP): ${BOLD}https://console.cloud.google.com/vertex-ai/model-garden?project=${PROJECT_ID}${NC}"
   echo -e "    2. Search for the model card and click ${BOLD}Enable${NC}."
   echo -e "    3. Refresh your local config in ~5s (no redeploy needed): ${BOLD}./deploy.sh --project ${PROJECT_ID} --service ${SERVICE_NAME} --sync-models${NC}"
 fi
 
+if [[ "${#NOT_DEPLOYED_MODELS[@]}" -gt 0 ]]; then
+  echo -e ""
+  echo -e "  ${RED}${BOLD}Action required:${NC} config.yaml changed since the last full deploy (${NOT_DEPLOYED_MODELS[*]})."
+  echo -e "    --sync-models can't add new models: config.yaml is baked into the Cloud Run container."
+  echo -e "    Run a full deploy (~3-5 min): ${BOLD}./deploy.sh --project ${PROJECT_ID} --service ${SERVICE_NAME}${NC}"
+fi
+
 if [[ "${#ACTIVE_MODELS[@]}" -eq 0 ]]; then
-  echo -e "  ${YELLOW}Warning: No models responded with HTTP 200 during probe; falling back to all models in config.yaml.${NC}"
-  ACTIVE_MODELS=("${CONFIGURED_MODELS[@]}")
+  echo -e "  ${YELLOW}Warning: No models responded with HTTP 200 during probe; falling back to all deployed models in config.yaml.${NC}"
+  ACTIVE_MODELS=(${PROBE_MODELS[@]+"${PROBE_MODELS[@]}"})
+  [[ "${#ACTIVE_MODELS[@]}" -gt 0 ]] || ACTIVE_MODELS=("${CONFIGURED_MODELS[@]}")
 fi
 
 # 7. Generate Local admin_settings.json AND gateway.env with ONLY active models
@@ -305,6 +350,8 @@ model_display_name() {
     gemini-2.5-flash)          echo "Gemini 2.5 Flash" ;;
     claude-sonnet-5)           echo "Claude Sonnet 5" ;;
     claude-opus-5)             echo "Claude Opus 5" ;;
+    claude-opus-5-5)           echo "Claude Opus 5.5" ;;
+    claude-fable-5)            echo "Claude Fable 5" ;;
     claude-sonnet-4-6)         echo "Claude Sonnet 4.6" ;;
     claude-opus-4-6)           echo "Claude Opus 4.6" ;;
     claude-haiku-4-5@20251001) echo "Claude Haiku 4.5" ;;
@@ -395,10 +442,13 @@ echo -e "${BOLD}Gateway URL:${NC}       ${SERVICE_URL}"
 echo -e "${BOLD}API Docs:${NC}          ${SERVICE_URL}/  (Swagger UI)"
 echo -e "${BOLD}API Key stored in:${NC} projects/${PROJECT_ID}/secrets/${SECRET_NAME}"
 echo -e "${BOLD}Active Models:${NC}     ${CSV_MODELS}"
+if [[ "${#NOT_DEPLOYED_MODELS[@]}" -gt 0 ]]; then
+  echo -e "${RED}${BOLD}Not Deployed Yet:${NC}  ${NOT_DEPLOYED_MODELS[*]} → run a full deploy: ${BOLD}./deploy.sh --project ${PROJECT_ID} --service ${SERVICE_NAME}${NC}"
+fi
 echo -e "${BOLD}Generated Files:${NC}   $(pwd)/admin_settings.json"
 echo -e "                   $(pwd)/gateway.env"
 echo ""
-echo -e "${YELLOW}${BOLD}Step 1 — Install config & activate models for Antigravity CLI / IDE (Linux):${NC}"
+echo -e "${YELLOW}${BOLD}Step 1 — Install config & activate models for Antigravity CLI (Linux):${NC}"
 echo -e "  sudo install -d -m 755 /etc/antigravity && sudo install -m 644 admin_settings.json /etc/antigravity/admin_settings.json"
 echo -e "  source gateway.env"
 echo ""
@@ -409,16 +459,15 @@ if [[ ",${CSV_MODELS}," == *",gemini-3.8-flash,"* ]]; then
 elif [[ -n "${DEFAULT_MODEL_ID:-}" ]]; then
   echo -e "  agy --model ${DEFAULT_MODEL_ID} -p \"Explain how binary search works\""
 fi
-if [[ ",${CSV_MODELS}," == *",claude-opus-5,"* ]]; then
-  echo -e "  agy --model claude-opus-5 -p \"Explain how binary search works\""
-fi
-if [[ ",${CSV_MODELS}," == *",claude-sonnet-5,"* ]]; then
-  echo -e "  agy --model claude-sonnet-5 -p \"Explain how binary search works\""
-fi
+for m in "${ACTIVE_MODELS[@]}"; do
+  [[ "$m" == gemini-* ]] && continue
+  echo -e "  agy --model ${m} -p \"Explain how binary search works\""
+done
 echo ""
-echo -e "${YELLOW}${BOLD}Adding / removing models later:${NC}"
-echo -e "  • Enabled a model in Vertex AI Model Garden that is already in config.yaml?"
+echo -e "${YELLOW}${BOLD}Adding / removing models later${NC} (order: GCP side → gateway → re-run Step 1 on your machine):"
+echo -e "  • Enabled a model in Model Garden that is ${BOLD}already listed${NC} in config.yaml?"
 echo -e "    Run: ${BOLD}./deploy.sh --project ${PROJECT_ID} --service ${SERVICE_NAME} --sync-models${NC} (~5s, no container rebuild)"
-echo -e "  • Added or removed a model in config.yaml?"
-echo -e "    Run: ${BOLD}./deploy.sh --project ${PROJECT_ID} --service ${SERVICE_NAME}${NC}"
+echo -e "  • Enabled a model that is ${BOLD}not in${NC} config.yaml yet (e.g. a newly released Claude), or removed one?"
+echo -e "    Edit config.yaml, then run: ${BOLD}./deploy.sh --project ${PROJECT_ID} --service ${SERVICE_NAME}${NC} (~3-5 min)"
+echo -e "  • Either way, finish by re-running Step 1 (re-install admin_settings.json + source gateway.env)."
 echo ""

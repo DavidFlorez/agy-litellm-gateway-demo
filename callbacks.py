@@ -1,14 +1,14 @@
 """
-Antigravity Protojson Compatibility Plugin for Official LiteLLM Proxy.
+Antigravity Protojson Compatibility Plugin for LiteLLM Proxy.
 
 Loaded via `litellm_settings.callbacks: ["callbacks.antigravity_compat"]` in `config.yaml`.
 
 Why this plugin exists:
 LiteLLM Proxy natively exposes `/v1beta/models/{model}:generateContent` and
 `/v1beta/models/{model}:streamGenerateContent` and translates non-Gemini models
-(such as Vertex AI Claude) via `GoogleGenAIAdapter`. However, Antigravity's Go
+(such as Vertex AI / GEAP Claude) via `GoogleGenAIAdapter`. However, Antigravity's Go
 `protojson` serializer emits a few protobuf-specific wire conventions that strict
-downstream providers (like Anthropic on Vertex AI) reject without normalization:
+downstream providers (like Anthropic on Vertex AI / GEAP) reject without normalization:
   1. `int64` JSON Schema keywords (`minItems`, `maxItems`, `minLength`, etc.) are
      serialized by `protojson` as strings (e.g. `"minItems": "2"`).
   2. `systemInstruction.parts` in Antigravity contains multiple text parts
@@ -465,7 +465,7 @@ _apply_antigravity_patches()
 
 
 class AntigravityCompatLogger(CustomLogger):
-    """LiteLLM Proxy callback hook for Antigravity IDE and CLI compatibility."""
+    """LiteLLM Proxy callback hook for Antigravity CLI compatibility."""
 
     def __init__(self) -> None:
         super().__init__()
