@@ -1,5 +1,6 @@
 # Local generated Antigravity configuration (contains live gateway API key)
 admin_settings.json
+gateway.env
 
 # Environment & credentials
 .env

@@ -17,6 +17,8 @@
 model_list:
   # ---------------------------------------------------------------------------
   # 1. Google Vertex AI — Gemini Models (Global Endpoint)
+  #    Auto-enabled when `aiplatform.googleapis.com` is enabled by deploy.sh.
+  #    No Model Garden activation step is required for Gemini models.
   # ---------------------------------------------------------------------------
   - model_name: gemini-3.8-flash
     litellm_params:
@@ -36,26 +38,17 @@ model_list:
       vertex_project: os.environ/GCP_PROJECT_ID
       vertex_location: global
 
-  - model_name: gemini-3-flash-preview
-    litellm_params:
-      model: vertex_ai/gemini-3-flash-preview
-      vertex_project: os.environ/GCP_PROJECT_ID
-      vertex_location: global
-
-  - model_name: gemini-2.5-pro
-    litellm_params:
-      model: vertex_ai/gemini-2.5-pro
-      vertex_project: os.environ/GCP_PROJECT_ID
-      vertex_location: global
-
-  - model_name: gemini-2.5-flash
-    litellm_params:
-      model: vertex_ai/gemini-2.5-flash
-      vertex_project: os.environ/GCP_PROJECT_ID
-      vertex_location: global
-
   # ---------------------------------------------------------------------------
-  # 2. Google Vertex AI — Anthropic Claude Models (Model Garden Global Endpoint)
+  # 2. Google Vertex AI — Anthropic Claude Partner Models (Global Endpoint)
+  #    IMPORTANT: Each Claude model below MUST be enabled once in your GCP
+  #    project's Vertex AI Model Garden before Vertex AI will serve it:
+  #      https://console.cloud.google.com/vertex-ai/model-garden
+  #
+  #    During `./deploy.sh`, each model in `model_list` is probed automatically:
+  #      - Models enabled in Model Garden are marked ACTIVE and written to
+  #        `admin_settings.json` and `gateway.env`.
+  #      - Models not yet enabled in Model Garden (HTTP 404/403) are skipped
+  #        from the client config until you enable them.
   # ---------------------------------------------------------------------------
   - model_name: claude-sonnet-5
     litellm_params:
@@ -69,38 +62,46 @@ model_list:
       vertex_project: os.environ/GCP_PROJECT_ID
       vertex_location: global
 
-  - model_name: claude-fable-5
-    litellm_params:
-      model: vertex_ai/claude-fable-5
-      vertex_project: os.environ/GCP_PROJECT_ID
-      vertex_location: global
-
-  - model_name: claude-sonnet-4-6
-    litellm_params:
-      model: vertex_ai/claude-sonnet-4-6
-      vertex_project: os.environ/GCP_PROJECT_ID
-      vertex_location: global
-
-  - model_name: claude-opus-4-6
-    litellm_params:
-      model: vertex_ai/claude-opus-4-6
-      vertex_project: os.environ/GCP_PROJECT_ID
-      vertex_location: global
-
-  - model_name: claude-sonnet-4-5@20250929
-    litellm_params:
-      model: vertex_ai/claude-sonnet-4-5@20250929
-      vertex_project: os.environ/GCP_PROJECT_ID
-      vertex_location: global
-
-  - model_name: claude-haiku-4-5@20251001
-    litellm_params:
-      model: vertex_ai/claude-haiku-4-5@20251001
-      vertex_project: os.environ/GCP_PROJECT_ID
-      vertex_location: global
+  # ---------------------------------------------------------------------------
+  # 3. Optional: Additional Vertex AI Gemini & Model Garden Models
+  #    To add another model (e.g. Claude 4.6, Haiku 4.5, Gemini 2.5 Pro/Flash):
+  #      1. If it is a Partner model (Claude, Llama, etc.), enable it in
+  #         Vertex AI Model Garden for your project.
+  #      2. Uncomment (or add) its block below.
+  #      3. Re-run `./deploy.sh --project YOUR_GCP_PROJECT_ID`.
+  # ---------------------------------------------------------------------------
+  # - model_name: gemini-2.5-pro
+  #   litellm_params:
+  #     model: vertex_ai/gemini-2.5-pro
+  #     vertex_project: os.environ/GCP_PROJECT_ID
+  #     vertex_location: global
+  #
+  # - model_name: gemini-2.5-flash
+  #   litellm_params:
+  #     model: vertex_ai/gemini-2.5-flash
+  #     vertex_project: os.environ/GCP_PROJECT_ID
+  #     vertex_location: global
+  #
+  # - model_name: claude-sonnet-4-6
+  #   litellm_params:
+  #     model: vertex_ai/claude-sonnet-4-6
+  #     vertex_project: os.environ/GCP_PROJECT_ID
+  #     vertex_location: global
+  #
+  # - model_name: claude-opus-4-6
+  #   litellm_params:
+  #     model: vertex_ai/claude-opus-4-6
+  #     vertex_project: os.environ/GCP_PROJECT_ID
+  #     vertex_location: global
+  #
+  # - model_name: claude-haiku-4-5@20251001
+  #   litellm_params:
+  #     model: vertex_ai/claude-haiku-4-5@20251001
+  #     vertex_project: os.environ/GCP_PROJECT_ID
+  #     vertex_location: global
 
   # ---------------------------------------------------------------------------
-  # 3. Optional: Third-Party Providers (Uncomment to enable OpenAI / Bedrock)
+  # 4. Optional: Third-Party Providers (Uncomment to enable OpenAI / Bedrock)
   # ---------------------------------------------------------------------------
   # - model_name: gpt-4o
   #   litellm_params:
@@ -124,7 +125,7 @@ router_settings:
 
   # Shorthand and internal Antigravity model ID aliases -> canonical model groups
   model_group_alias:
-    # Gemini aliases
+    # Gemini effort & shorthand aliases
     gemini-3.8-flash-high: gemini-3.8-flash
     gemini-3.8-flash-medium: gemini-3.8-flash
     gemini-3.8-flash-low: gemini-3.8-flash
@@ -137,43 +138,24 @@ router_settings:
     gemini-3.1-pro-high: gemini-3.1-pro-preview
     gemini-3.1-pro-low: gemini-3.1-pro-preview
     gemini-3.1-pro-low-thinking: gemini-3.1-pro-preview
-    gemini-3-flash: gemini-3-flash-preview
-    gemini-3-flash-agent: gemini-3-flash-preview
-    gemini-3.1-flash-lite: gemini-2.5-flash
-    gemini-3.1-flash-lite-preview: gemini-2.5-flash
+    gemini-3.1-flash-lite: gemini-3.7-flash
+    gemini-3.1-flash-lite-preview: gemini-3.7-flash
 
     # Claude shorthand & thinking aliases
     sonnet-5: claude-sonnet-5
     opus-5: claude-opus-5
-    fable-5: claude-fable-5
-    sonnet-4-6: claude-sonnet-4-6
-    opus-4-6: claude-opus-4-6
-    claude-sonnet-4-6-thinking: claude-sonnet-4-6
-    claude-opus-4-6-thinking: claude-opus-4-6
-    claude-sonnet-4-5: claude-sonnet-4-5@20250929
-    claude-sonnet-4-5-thinking: claude-sonnet-4-5@20250929
-    claude-haiku-4-5: claude-haiku-4-5@20251001
-    haiku-4-5: claude-haiku-4-5@20251001
+    claude-sonnet-5-thinking: claude-sonnet-5
+    claude-opus-5-thinking: claude-opus-5
 
-  # Automatic fallback chains if a model group hits quota (429) or transient 5xx
+  # Automatic fallback chains if a model group hits quota (429) or transient 5xx.
+  # Only include models here that are enabled in your project.
   fallbacks:
     - gemini-3.8-flash:
         - gemini-3.7-flash
-        - gemini-2.5-flash
-    - gemini-3.7-flash:
-        - gemini-2.5-flash
     - gemini-3.1-pro-preview:
-        - gemini-2.5-pro
-    - gemini-3-flash-preview:
-        - gemini-2.5-flash
-    - claude-fable-5:
-        - claude-opus-5
-        - claude-sonnet-5
+        - gemini-3.8-flash
     - claude-opus-5:
         - claude-sonnet-5
-        - claude-opus-4-6
-    - claude-sonnet-5:
-        - claude-sonnet-4-6
 
 # =============================================================================
 # LiteLLM Runtime Settings & Antigravity Protojson Compatibility Plugin

@@ -1,24 +1,35 @@
 # Antigravity Enterprise Gateway — LiteLLM on Cloud Run
 
-Deploy **LiteLLM Proxy** on **Google Cloud Run** for **Antigravity CLI `agy`** with **one command**.
+Deploy **LiteLLM Proxy** on **Google Cloud Run** for **Antigravity CLI (`agy`)** and **Antigravity IDE** with **one command**.
 
 This repository deploys the **official [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy)** (`ghcr.io/berriai/litellm`, pinned to v1.105.0) configured for Antigravity's Google GenAI wire protocol (`/v1beta/models/{model}:streamGenerateContent?alt=sse`).
 
-- 🧠 Bring & Choose Your Models: Curate which models developers see, set default models, or route requests to different models behind the proxy (supports both Vertex AI and OpenAI-compatible formats).
-- 💰 Control the Budget: Set spending/usage limits per developer or team, and route simpler tasks to cheaper/faster models.
-- 🔒 Pass Security Audit: Strip sensitive data (PII) and log every AI request inside the company's own network.
+- 🧠 **Bring & Choose Your Models:** Curate which models developers see, set default models, or route requests to different models behind the proxy (supports both Vertex AI and OpenAI-compatible formats).
+- 💰 **Control the Budget:** Set spending/usage limits per developer or team, and route simpler tasks to cheaper/faster models.
+- 🔒 **Pass Security Audit:** Strip sensitive data (PII) and log every AI request inside your own Google Cloud project.
 
 ---
 
 ## 1-Minute Quickstart
 
 ### Prerequisites
-1. [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install), `curl` and `openssl` installed, and gcloud logged in:
+
+1. [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install), `curl`, `openssl`, and `awk` installed, and `gcloud` logged in:
    ```bash
    gcloud auth login
    ```
 2. A Google Cloud project with **billing enabled**, and you have **Owner** (or Editor + Security Admin) on it.
-3. If you want Claude: enable the Claude models once in [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) for that project.
+3. **Model Activation in Vertex AI Model Garden (Partner Models only):**
+   Understanding which models work out-of-the-box vs. which require one-time activation in Google Cloud Console:
+
+   | Model Family | Examples in `config.yaml` | Activation Required? |
+   | :--- | :--- | :--- |
+   | **Google Gemini** *(First-Party)* | `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.1-pro-preview` | **No** — automatically enabled when `./deploy.sh` enables the Vertex AI API (`aiplatform.googleapis.com`). |
+   | **Anthropic Claude** *(Partner)* | `claude-sonnet-5`, `claude-opus-5` *(plus optional `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5@20251001`)* | **Yes (once per GCP project)** — open [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden), select your GCP project, search for the model card (e.g. **Claude Opus 5** / **Claude Sonnet 5**), and click **Enable**. |
+
+   > **Tip:** You can enable Claude models in Model Garden **before or after** running `./deploy.sh`. During deployment, `./deploy.sh` probes every model in `config.yaml` and automatically excludes any model that isn't enabled in Model Garden yet so broken models never clutter your CLI list.
+
+---
 
 ### Step 1: Deploy in One Command
 
@@ -26,42 +37,51 @@ This repository deploys the **official [LiteLLM Proxy](https://docs.litellm.ai/d
 ./deploy.sh --project YOUR_GCP_PROJECT_ID
 ```
 
-That's it. The script is idempotent, so it's safe to re-run at any time. It:
+That's it. The script is idempotent and safe to re-run at any time. It:
 
-1. Runs pre-flight checks (tools installed, gcloud logged in, project accessible).
+1. Runs pre-flight checks (tools installed, `gcloud` logged in, project accessible).
 2. Enables required GCP APIs (`run`, `aiplatform`, `cloudbuild`, `artifactregistry`, `secretmanager`).
 3. Creates a dedicated least-privilege Service Account (`antigravity-gateway-sa`) with only `roles/aiplatform.user`.
-4. Generates a random 256-bit **gateway API key** and stores it in **Google Cloud Secret Manager** (`antigravity-gateway-api-key`).
-5. Builds and deploys the LiteLLM Proxy container to **Cloud Run**.
-6. Generates `admin_settings.json` in this folder, pre-filled with your gateway URL and API key.
-7. Runs `./scripts/test_gateway.sh` to verify health, authentication, Gemini and Claude streaming, and tool calling.
+4. Generates a random 256-bit **gateway API key** (or reuses your existing one) in **Google Cloud Secret Manager** (`antigravity-gateway-api-key`).
+5. Builds and deploys the LiteLLM Proxy container (`config.yaml` + `callbacks.py`) to **Cloud Run**.
+6. **Probes every model in `config.yaml`** against Vertex AI to check which models are `✓ ACTIVE` vs `○ INACTIVE` (not yet enabled in Model Garden).
+7. Generates **`admin_settings.json`** and **`gateway.env`** in this folder containing **only the verified active models**.
+8. Runs `./scripts/test_gateway.sh` to verify health, authentication, Gemini and Claude streaming, and tool calling.
 
 **Optional flags:**
 
 | Flag | Default | Purpose |
 | :--- | :--- | :--- |
-| `--region <REGION>` | `us-central1` | Cloud Run region |
-| `--api-key <KEY>` | reuse existing / generate | Set or **rotate** the gateway API key |
-| `--min-instances <N>` | `0` | Keep `N` instances warm. Avoids the ~10–20s cold start on the first request after idle (costs money) |
-| `--service <NAME>` | `antigravity-enterprise-gateway` | Cloud Run service name (deploy multiple gateways side by side) |
+| `-p, --project <ID>` | `gcloud config` project | Target GCP project ID |
+| `-s, --service <NAME>` | `antigravity-enterprise-gateway` | Cloud Run service name (deploy multiple gateways side by side) |
+| `-r, --region <REGION>` | `us-central1` | Cloud Run region |
+| `-k, --api-key <KEY>` | reuse existing / generate | Set or **rotate** the gateway API key |
+| `-m, --min-instances <N>` | `0` | Keep `N` instances warm to avoid ~10–20s cold starts (costs money) |
+| `-S, --sync-models` | `false` | **Fast model sync (~5s):** Skip Cloud Run container build, re-probe active models in Model Garden, and regenerate `admin_settings.json` + `gateway.env` |
 
 ---
 
-### Step 2: Connect Antigravity CLI
+### Step 2: Connect Antigravity CLI (`agy`) & IDE
 
-Copy the generated `admin_settings.json` to your OS enterprise settings path:
+Install `admin_settings.json` with world-readable permissions (`0644`) **and** load `gateway.env`:
 
 - **Linux:**
   ```bash
-  sudo mkdir -p /etc/antigravity
-  sudo cp admin_settings.json /etc/antigravity/admin_settings.json
-  sudo chmod 644 /etc/antigravity/admin_settings.json
+  # 1. Install admin_settings.json with 0644 permissions so non-root `agy` can read it
+  sudo install -d -m 755 /etc/antigravity
+  sudo install -m 644 admin_settings.json /etc/antigravity/admin_settings.json
+
+  # 2. Load the active gateway model catalog into your current shell
+  source gateway.env
+
+  # Optional: Persist gateway.env for all new terminal sessions on Linux
+  sudo install -m 644 gateway.env /etc/profile.d/antigravity-gateway.sh
   ```
 - **macOS:**
   ```bash
-  sudo mkdir -p "/Library/Application Support/Antigravity"
-  sudo cp admin_settings.json "/Library/Application Support/Antigravity/admin_settings.json"
-  sudo chmod 644 "/Library/Application Support/Antigravity/admin_settings.json"
+  sudo install -d -m 755 "/Library/Application Support/Antigravity"
+  sudo install -m 644 admin_settings.json "/Library/Application Support/Antigravity/admin_settings.json"
+  source gateway.env
   ```
 - **Windows (PowerShell as Administrator):**
   ```powershell
@@ -69,12 +89,115 @@ Copy the generated `admin_settings.json` to your OS enterprise settings path:
   Copy-Item admin_settings.json "$env:ProgramData\Antigravity\admin_settings.json"
   ```
 
-Restart Antigravity, or test right away from your terminal with `agy`:
+Now verify your active model catalog and test inference with `agy`:
 
 ```bash
-agy --model gemini-3.8-flash -p "Write a Python binary search implementation"
-agy --model claude-sonnet-5  -p "Write a Python binary search implementation"
+# 1. Check the active model list (should show ONLY your active gateway models)
+agy models
+
+# 2. Test Gemini (note: Gemini 3.x models in `agy` require an effort suffix -low/-medium/-high or --effort)
+agy --model gemini-3.8-flash-low -p "Explain how binary search works"
+agy --model gemini-3.8-flash --effort high -p "Explain how binary search works"
+
+# 3. Test Claude Opus 5 & Claude Sonnet 5 (passed directly by model ID)
+agy --model claude-opus-5 -p "Write a Python binary search implementation"
+agy --model claude-sonnet-5 -p "Write a Python binary search implementation"
 ```
+
+> **Why are both `install -m 644` and `source gateway.env` important?**
+> 1. **File permissions (`0644`):** `deploy.sh` creates `admin_settings.json` with `0600` permissions locally. If you copy it with plain `sudo cp` without setting `0644`, `/etc/antigravity/admin_settings.json` becomes root-only (`-rw------- root:root`). The non-root `agy` CLI cannot read it and silently falls back to the consumer Antigravity catalog (which lists consumer defaults like `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, and `gpt-oss-120b-medium`). Using `sudo install -m 644` prevents this.
+> 2. **`AGY_LLM_GATEWAY_MODELS` (`gateway.env`):** While the Antigravity IDE reads `models.list` from `admin_settings.json`, the `agy` CLI discovers custom/partner gateway models (such as `claude-opus-5` and `claude-sonnet-5`) from the `AGY_LLM_GATEWAY_MODELS` environment variable exported by `gateway.env`.
+
+---
+
+## Managing Models: How & When to Enable, Add, or Remove Models
+
+### Where Models Are Configured (3 Layers)
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 1. Vertex AI Model Garden (GCP Console)                                    │
+│    • Grants your GCP project access to Partner models (Claude Opus 5, etc.)│
+│    • Gemini models do NOT need this step (auto-enabled with Vertex AI API) │
+└─────────────────────────────────────┬──────────────────────────────────────┘
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 2. config.yaml (LiteLLM Proxy Server on Cloud Run)                         │
+│    • `model_list`: Every model the gateway is allowed to route to          │
+│    • `model_group_alias`: Shorthand aliases (e.g. opus-5 -> claude-opus-5) │
+│    • `fallbacks`: Automatic retry fallback chains on HTTP 429 / 5xx        │
+└─────────────────────────────────────┬──────────────────────────────────────┘
+                                      ▼  (./deploy.sh probes & generates)
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 3. admin_settings.json + gateway.env (Developer Workstation)               │
+│    • Contains ONLY the models from config.yaml that are ACTIVE in GCP      │
+│    • Controls what appears in `agy models` and the Antigravity IDE picker  │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Quick Decision Guide: What Should I Run?
+
+| What you want to do | Where to make the change | Command to run | Redeploys Cloud Run? |
+| :--- | :--- | :--- | :--- |
+| **I just enabled `claude-opus-5` or `claude-sonnet-5` in Model Garden** *(already in `config.yaml`)* | [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) → click **Enable** | `./deploy.sh --project <PROJECT> --service <SERVICE> --sync-models` then re-copy `admin_settings.json` & `source gateway.env` | **No** (~5 seconds) |
+| **I want to add a brand-new model** *(or uncomment `claude-sonnet-4-6`, `gemini-2.5-pro`, `gpt-4o`, etc.)* | 1. Enable in Model Garden (if Partner model)<br>2. Add/uncomment under `model_list` in `config.yaml` | `./deploy.sh --project <PROJECT> --service <SERVICE>` then re-copy `admin_settings.json` & `source gateway.env` | **Yes** (~3–5 minutes) |
+| **I want to remove a model for everyone** | Remove or comment out the model block under `model_list` in `config.yaml` (and remove from `fallbacks`) | `./deploy.sh --project <PROJECT> --service <SERVICE>` then re-copy `admin_settings.json` & `source gateway.env` | **Yes** (~3–5 minutes) |
+| **I want to hide a model on my machine only** | Remove the model ID from `AGY_LLM_GATEWAY_MODELS` in `gateway.env` and `models` in `/etc/antigravity/admin_settings.json` | `source gateway.env` | **No** (instant) |
+
+---
+
+### Detailed Examples
+
+#### Example A: Enabling a Partner Model in Vertex AI Model Garden (e.g., Claude Opus 5)
+1. Open [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) and make sure your GCP project is selected at the top.
+2. Search for **Claude Opus 5** (or **Claude Sonnet 5**), open its model card, and click **Enable** (accept the partner terms if prompted).
+3. Verify the **Model ID** on the card (e.g. `claude-opus-5`).
+4. Since `claude-opus-5` and `claude-sonnet-5` are already in `config.yaml` by default, you do **not** need to rebuild the container. Just sync your local client config:
+   ```bash
+   ./deploy.sh --project YOUR_GCP_PROJECT_ID --service YOUR_SERVICE_NAME --sync-models
+   sudo install -m 644 admin_settings.json /etc/antigravity/admin_settings.json
+   source gateway.env
+   ```
+5. Confirm `claude-opus-5` now appears in `agy models` and test it:
+   ```bash
+   agy models
+   agy --model claude-opus-5 -p "Hello from Claude Opus 5!"
+   ```
+
+#### Example B: Adding a New Model to `config.yaml`
+Suppose you want to add `claude-haiku-4-5@20251001` (from Vertex AI Model Garden) or `gpt-4o` (from OpenAI):
+
+1. If it is a Vertex AI Partner model, enable it in [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) first.
+2. Open `config.yaml` and add (or uncomment) the entry under `model_list`:
+   ```yaml
+   model_list:
+     # Vertex AI Model Garden model:
+     - model_name: claude-haiku-4-5@20251001
+       litellm_params:
+         model: vertex_ai/claude-haiku-4-5@20251001
+         vertex_project: os.environ/GCP_PROJECT_ID
+         vertex_location: global
+
+     # Or a third-party provider (OpenAI, Anthropic direct, AWS Bedrock, etc.):
+     - model_name: gpt-4o
+       litellm_params:
+         model: openai/gpt-4o
+         api_key: os.environ/OPENAI_API_KEY
+   ```
+3. Redeploy the gateway so LiteLLM loads the updated `config.yaml`, probes the new model, and updates `admin_settings.json` and `gateway.env`:
+   ```bash
+   ./deploy.sh --project YOUR_GCP_PROJECT_ID --service YOUR_SERVICE_NAME
+   sudo install -m 644 admin_settings.json /etc/antigravity/admin_settings.json
+   source gateway.env
+   ```
+
+#### Example C: Removing a Model
+1. Open `config.yaml` and delete or comment out the `- model_name: ...` block under `model_list` (also check `router_settings.fallbacks` to make sure no other model falls back to it).
+2. Re-run `./deploy.sh --project YOUR_GCP_PROJECT_ID --service YOUR_SERVICE_NAME`, then re-run:
+   ```bash
+   sudo install -m 644 admin_settings.json /etc/antigravity/admin_settings.json
+   source gateway.env
+   ```
 
 ---
 
@@ -85,8 +208,8 @@ agy --model claude-sonnet-5  -p "Write a Python binary search implementation"
 Here is how a request is authenticated, step by step:
 
 ```
-Antigravity CLI
-   │  reads gateway.apiKey from admin_settings.json
+Antigravity CLI / IDE
+   │  reads gateway.apiKey from admin_settings.json / AGY_LLM_GATEWAY_API_KEY
    │  sends:  Authorization: Bearer <apiKey>
    ▼
 Cloud Run (public HTTPS endpoint, TLS by Google Front End)
@@ -105,7 +228,7 @@ No Google credentials ever leave GCP or reach the developer's machine.
 | Layer | What protects it |
 | :--- | :--- |
 | **Who can call the gateway** | The gateway API key (`Authorization: Bearer`). Every model endpoint (`/v1beta/*`, `/v1/*`, `/health`, `/metrics`, key management) requires it. Only `/health/liveliness`, `/health/readiness`, the Swagger UI at `/` and the static `/ui` shell are public, and none of them expose secrets or models. |
-| **Where the key lives** | Google Cloud Secret Manager (`antigravity-gateway-api-key`). Only the gateway's Service Account has `secretAccessor`. On developer machines it's in `admin_settings.json` (keep it `root`-owned on shared machines). |
+| **Where the key lives** | Google Cloud Secret Manager (`antigravity-gateway-api-key`). Only the gateway's Service Account has `secretAccessor`. On developer machines it's in `admin_settings.json` / `gateway.env`. |
 | **What the gateway can do in GCP** | Only `roles/aiplatform.user` (call Vertex AI models) through its dedicated Service Account. Nothing else. |
 | **Transport** | HTTPS only (Cloud Run managed TLS). |
 
@@ -116,7 +239,7 @@ Cloud Run supports [Identity-Aware Proxy](https://cloud.google.com/run/docs/secu
 ```bash
 ./deploy.sh --project YOUR_GCP_PROJECT_ID --api-key "sk-agy-$(openssl rand -hex 32)"
 ```
-This stores the new key as the latest Secret Manager version, rolls out a new Cloud Run revision, **disables the old key version**, and regenerates `admin_settings.json`. Redistribute the new `admin_settings.json` to your developers.
+This stores the new key as the latest Secret Manager version, rolls out a new Cloud Run revision, **disables the old key version**, and regenerates `admin_settings.json` and `gateway.env`. Redistribute the updated files to your developers.
 
 ### Hardening for production (beyond PoC)
 | Concern | Recommendation |
@@ -132,8 +255,8 @@ This stores the new key as the latest Secret Manager version, rolls out a new Cl
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                Developer Workstation (Antigravity CLI)            │
-│  Reads /etc/antigravity/admin_settings.json (wireProtocol: "genai")     │
+│              Developer Workstation (Antigravity CLI / IDE)              │
+│  Reads /etc/antigravity/admin_settings.json + gateway.env               │
 └───────────────────────────────────┬─────────────────────────────────────┘
                                     │ HTTPS POST /v1beta/models/{model}:streamGenerateContent?alt=sse
                                     │ Header: Authorization: Bearer <gateway API key>
@@ -144,7 +267,7 @@ This stores the new key as the latest Secret Manager version, rolls out a new Cl
 │                                                                         │
 │  • Auth Guard: Validates Bearer token against Secret Manager key        │
 │  • LiteLLM Router (config.yaml):                                        │
-│      - Resolves model_group_alias (e.g. sonnet-5 -> claude-sonnet-5)    │
+│      - Resolves model_group_alias (e.g. opus-5 -> claude-opus-5)        │
 │      - Automatic retries & fallback chains on 429 / 5xx                 │
 │  • Antigravity Protojson Plugin (callbacks.py):                         │
 │      - Normalizes protojson tool schemas ("minItems": "2" -> 2)         │
@@ -157,8 +280,7 @@ This stores the new key as the latest Secret Manager version, rolls out a new Cl
      │   Vertex AI Gemini API    │       │  Vertex AI Model Garden   │
      │  • gemini-3.8-flash       │       │  • claude-sonnet-5        │
      │  • gemini-3.7-flash       │       │  • claude-opus-5          │
-     │  • gemini-3.1-pro-preview │       │  • claude-sonnet-4-6      │
-     │  • gemini-2.5-pro / flash │       │  • claude-opus-4-6        │
+     │  • gemini-3.1-pro-preview │       │  • (optional 4.6 / Haiku) │
      └───────────────────────────┘       └───────────────────────────┘
 ```
 
@@ -171,8 +293,8 @@ This stores the new key as the latest Secret Manager version, rolls out a new Cl
 ├── config.yaml                 # LiteLLM Proxy model list, aliases, fallbacks & settings
 ├── callbacks.py                # LiteLLM plugin normalizing Antigravity protojson quirks
 ├── Dockerfile                  # Extends the pinned official LiteLLM image
-├── deploy.sh                   # One-command Cloud Run deployment & verification
-├── admin_settings.example.json # Template for the Antigravity enterprise client config
+├── deploy.sh                   # One-command Cloud Run deployment, model probe & config generator
+├── admin_settings.example.json # Reference template for the Antigravity enterprise client config
 ├── scripts/
 │   └── test_gateway.sh         # End-to-end security, streaming & tool-calling checks
 └── README.md                   # This guide
@@ -180,38 +302,12 @@ This stores the new key as the latest Secret Manager version, rolls out a new Cl
 
 ---
 
-## Customizing Models & Using LiteLLM Features
+## LiteLLM Features & Upgrade Path
 
-### 1. Built-in endpoints
+### Built-in endpoints
 - **Swagger / OpenAPI explorer:** `https://<YOUR_GATEWAY_URL>/` (root path)
 - **Model list:** `GET https://<YOUR_GATEWAY_URL>/v1/models` (needs the API key)
 - **OpenAI-compatible:** `POST https://<YOUR_GATEWAY_URL>/v1/chat/completions`. Other tools (Cursor, Continue, LangChain, the OpenAI SDK) can share the same gateway.
-
-### 2. Adding models or providers (`config.yaml`)
-To add a model from any of [LiteLLM's 100+ providers](https://docs.litellm.ai/docs/providers), add an entry under `model_list` in `config.yaml`, add its `modelId` to `admin_settings.example.json`, and re-run `./deploy.sh`:
-
-```yaml
-model_list:
-  - model_name: gpt-4o
-    litellm_params:
-      model: openai/gpt-4o
-      api_key: os.environ/OPENAI_API_KEY   # store it in Secret Manager and add to --set-secrets
-```
-
-LiteLLM translates Antigravity's `/v1beta/models/gpt-4o:streamGenerateContent` calls to OpenAI's format and streams the response back.
-
-### 3. Model aliases & fallbacks (`config.yaml`)
-Under `router_settings`, define aliases and automatic fallback chains for when a model hits quota (`429`) or a transient `5xx`:
-
-```yaml
-router_settings:
-  num_retries: 2
-  model_group_alias:
-    sonnet-5: claude-sonnet-5
-  fallbacks:
-    - claude-fable-5: ["claude-opus-5", "claude-sonnet-5"]
-    - gemini-3.8-flash: ["gemini-3.7-flash", "gemini-2.5-flash"]
-```
 
 ### Upgrade path: per-developer keys, budgets & Admin UI
 The PoC runs **stateless** (no database). That's why the LiteLLM Admin UI at `/ui` loads but login fails with *"Not connected to DB"*. To unlock virtual keys, teams, spend tracking, budgets and the Admin UI:
@@ -219,7 +315,7 @@ The PoC runs **stateless** (no database). That's why the LiteLLM Admin UI at `/u
 1. Create a Postgres database (e.g. Cloud SQL for PostgreSQL) and store its connection string in Secret Manager as `litellm-database-url`.
 2. Grant `antigravity-gateway-sa` `roles/secretmanager.secretAccessor` on it (plus `roles/cloudsql.client` if using Cloud SQL connectors).
 3. Add `DATABASE_URL=litellm-database-url:latest` to `--set-secrets` in `deploy.sh` and re-run it. LiteLLM runs its schema migrations automatically on startup.
-4. Log in to `https://<YOUR_GATEWAY_URL>/ui` with username `admin` and the master key, then issue one virtual key per developer and put *that* key in their `admin_settings.json`.
+4. Log in to `https://<YOUR_GATEWAY_URL>/ui` with username `admin` and the master key, then issue one virtual key per developer and put *that* key in their `admin_settings.json` / `gateway.env`.
 
 ### Upgrading LiteLLM
 The base image is pinned by digest in the `Dockerfile` for reproducible deployments. To upgrade, change `LITELLM_IMAGE`, re-run `./deploy.sh`, and confirm all checks pass.
@@ -241,6 +337,7 @@ Running LiteLLM Proxy Security & Inference Checks against https://...
   ✓ PASS: LiteLLM Proxy model catalog (/v1/models) lists Gemini & Claude models
   ✓ PASS: Gemini 3.8 Flash native GenAI SSE streaming succeeded
   ✓ PASS: Claude Sonnet 5 GenAI-to-Anthropic SSE streaming succeeded
+  ✓ PASS: Claude Opus 5 GenAI-to-Anthropic SSE streaming succeeded
   ✓ PASS: Claude Sonnet 5 tool calling with Antigravity protojson schema succeeded
   ✓ PASS: OpenAI-compatible endpoint (/v1/chat/completions) succeeded
 ```
@@ -251,11 +348,13 @@ Running LiteLLM Proxy Security & Inference Checks against https://...
 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
-| **`401` "No api key passed in"** | The client isn't sending `Authorization: Bearer`. | Check that `gateway.apiKey` is set in the installed `admin_settings.json`. |
-| **`400` "No connected db"** | The client sent a key that **doesn't match** the gateway key (stateless mode). | Re-copy the latest `admin_settings.json`, or print the current key: `gcloud secrets versions access latest --secret=antigravity-gateway-api-key --project=YOUR_PROJECT_ID` |
-| **`403 Forbidden` HTML page from Google** | An org policy blocks public Cloud Run services. | Re-run `./deploy.sh`. It detects this and applies `--no-invoker-iam-check` automatically. If that's also blocked by policy, ask your org admin or use a Load Balancer (see Hardening). |
+| **`agy models` shows `claude-sonnet-4-6` / `gpt-oss-120b-medium` and is missing `claude-opus-5` / `claude-sonnet-5`** | 1. `/etc/antigravity/admin_settings.json` was copied with `0600` permissions (unreadable by non-root `agy`), so `agy` fell back to consumer mode, **or**<br>2. `AGY_LLM_GATEWAY_MODELS` (`gateway.env`) was not sourced in the shell. | Run:<br>`sudo install -d -m 755 /etc/antigravity && sudo install -m 644 admin_settings.json /etc/antigravity/admin_settings.json`<br>`source gateway.env` |
+| **`--model gemini-3.8-flash requires --effort (available: low, medium, high)`** | Built-in Gemini 3.x models in `agy` require a thinking effort tier. | Use a tier suffix (`agy --model gemini-3.8-flash-low`, `-medium`, or `-high`) or pass `--effort` (`agy --model gemini-3.8-flash --effort low`). Partner models (`claude-opus-5`, `claude-sonnet-5`) do not need `--effort`. |
+| **`model claude-opus-5 is not recognized as a known model or custom model in settings`** | `AGY_LLM_GATEWAY_MODELS` is not exported in your current shell, or `claude-opus-5` was not enabled in Model Garden when `gateway.env` was generated. | Enable Claude Opus 5 in [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden), run `./deploy.sh --project YOUR_PROJECT_ID --sync-models`, then `source gateway.env`. |
+| **Claude returns `404` or `403` from Vertex AI** | The Claude model has not been enabled in your GCP project's Model Garden. | Open [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden), select your project, click the Claude model card, and click **Enable**. |
+| **`401` "No api key passed in"** | The client isn't sending `Authorization: Bearer`. | Check that `gateway.apiKey` is set in `/etc/antigravity/admin_settings.json` and `source gateway.env` has been run. |
+| **`400` "No connected db"** | The client sent an API key that **doesn't match** the gateway key (stateless mode). | Re-run `./deploy.sh --project YOUR_PROJECT_ID --sync-models`, reinstall `admin_settings.json`, and `source gateway.env`. |
+| **`403 Forbidden` HTML page from Google** | An org policy blocks public Cloud Run services. | Re-run `./deploy.sh`. It detects this and applies `--no-invoker-iam-check` automatically. |
 | **First request after idle is slow / times out** | Cloud Run cold start (scale-to-zero). | `./deploy.sh --project YOUR_PROJECT_ID --min-instances 1` |
-| **Claude returns `404` or `403` from Vertex AI** | Claude models haven't been enabled in the project. | Open [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) and enable Claude Sonnet / Opus. |
 | **`429` / quota errors** | Vertex AI quota exhausted for a model. | Fallbacks in `config.yaml` kick in automatically. Request more quota in the Cloud Console if they persist. |
-| **Antigravity still prompts for Google login** | `admin_settings.json` is in the wrong folder or unreadable. | Copy it to the OS path in Step 2 with read permission (`chmod 644`) and restart the IDE. |
 | **See server logs** | — | `gcloud run services logs read antigravity-enterprise-gateway --project=YOUR_PROJECT_ID --region=us-central1 --limit=50` |
