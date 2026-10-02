@@ -1,27 +1,16 @@
-# Antigravity Enterprise Gateway — Official LiteLLM Proxy Edition
+# Antigravity Enterprise Gateway — LiteLLM on Cloud Run
 
 Deploy **LiteLLM Proxy** on **Google Cloud Run** for **Antigravity CLI `agy`** with **one command**.
 
-This repository deploys the **official [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy)** (`ghcr.io/berriai/litellm`, pinned to v1.105.0) configured for Antigravity's Google GenAI wire protocol (`/v1beta/models/{model}:streamGenerateContent?alt=sse`). There is no custom proxy server to maintain.
+This repository deploys the **official [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy)** (`ghcr.io/berriai/litellm`, pinned to v1.105.0) configured for Antigravity's Google GenAI wire protocol (`/v1beta/models/{model}:streamGenerateContent?alt=sse`).
+
+- 🧠 Bring & Choose Your Models: Curate which models developers see, set default models, or route requests to different models behind the proxy (supports both Vertex AI and OpenAI-compatible formats).
+- 💰 Control the Budget: Set spending/usage limits per developer or team, and route simpler tasks to cheaper/faster models.
+- 🔒 Pass Security Audit: Strip sensitive data (PII) and log every AI request inside the company's own network.
 
 ---
 
-## Why Official LiteLLM Proxy (Instead of a Custom Script)?
-
-LiteLLM Proxy natively implements Google's `:generateContent` and `:streamGenerateContent` endpoints on top of its full gateway engine:
-
-| Capability | Custom Python Script | Official LiteLLM Proxy (This Repo) |
-| :--- | :--- | :--- |
-| **Maintenance Footprint** | ~1,450 lines of custom FastAPI code | **Declarative `config.yaml`** + small `Dockerfile` |
-| **Routing, Retries & Fallbacks** | Hardcoded Python dictionaries | Native `router_settings` (`fallbacks`, `model_group_alias`, `cooldown_time`, load balancing) |
-| **Multi-Protocol Endpoints** | Custom routes only | Native **Google GenAI** (`/v1beta/models/*`), **OpenAI** (`/v1/chat/completions`), **Anthropic** (`/v1/messages`) |
-| **100+ Providers** | Vertex AI only | Vertex AI, OpenAI, Azure OpenAI, AWS Bedrock, Anthropic, ... by adding YAML |
-| **Enterprise Governance** | Single static key | Master key today; add Postgres for **per-user Virtual Keys, Teams, Budgets, Rate Limits & Admin UI** ([upgrade path](#upgrade-path-per-developer-keys-budgets--admin-ui)) |
-| **Observability** | Basic stdout logs | OpenTelemetry, Langfuse, Arize, Datadog callbacks, guardrails, Redis caching |
-
----
-
-## 1-Minute Quickstart (Customer PoC)
+## 1-Minute Quickstart
 
 ### Prerequisites
 1. [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install), `curl` and `openssl` installed, and gcloud logged in:
@@ -268,5 +257,5 @@ Running LiteLLM Proxy Security & Inference Checks against https://...
 | **First request after idle is slow / times out** | Cloud Run cold start (scale-to-zero). | `./deploy.sh --project YOUR_PROJECT_ID --min-instances 1` |
 | **Claude returns `404` or `403` from Vertex AI** | Claude models haven't been enabled in the project. | Open [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) and enable Claude Sonnet / Opus. |
 | **`429` / quota errors** | Vertex AI quota exhausted for a model. | Fallbacks in `config.yaml` kick in automatically. Request more quota in the Cloud Console if they persist. |
-| **Antigravity IDE still prompts for Google login** | `admin_settings.json` is in the wrong folder or unreadable. | Copy it to the OS path in Step 2 with read permission (`chmod 644`) and restart the IDE. |
+| **Antigravity still prompts for Google login** | `admin_settings.json` is in the wrong folder or unreadable. | Copy it to the OS path in Step 2 with read permission (`chmod 644`) and restart the IDE. |
 | **See server logs** | — | `gcloud run services logs read antigravity-enterprise-gateway --project=YOUR_PROJECT_ID --region=us-central1 --limit=50` |
