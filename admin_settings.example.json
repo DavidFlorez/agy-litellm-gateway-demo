@@ -1,0 +1,124 @@
+{
+  "gateway": {
+    "enabled": true,
+    "url": "https://antigravity-enterprise-gateway-XXXXXXXXXX.us-central1.run.app",
+    "apiKey": "REPLACE_WITH_YOUR_GATEWAY_API_KEY",
+    "wireProtocol": "genai",
+    "customHeaders": {
+      "X-Cost-Center": "Core-Engineering"
+    },
+    "models": {
+      "defaultModelId": "gemini-3.8-flash",
+      "filter": [
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.1-pro-preview",
+        "claude-sonnet-5",
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-sonnet-4-6",
+        "claude-opus-4-6"
+      ],
+      "list": [
+        {
+          "modelId": "gemini-3.8-flash",
+          "displayName": "Gemini 3.8 Flash",
+          "supportsThinking": true
+        },
+        {
+          "modelId": "gemini-3.7-flash",
+          "displayName": "Gemini 3.7 Flash",
+          "supportsThinking": true
+        },
+        {
+          "modelId": "gemini-3.1-pro-preview",
+          "displayName": "Gemini 3.1 Pro",
+          "supportsThinking": true
+        },
+        {
+          "modelId": "claude-sonnet-5",
+          "displayName": "Claude Sonnet 5",
+          "supportsThinking": true
+        },
+        {
+          "modelId": "claude-opus-5",
+          "displayName": "Claude Opus 5",
+          "supportsThinking": true
+        },
+        {
+          "modelId": "claude-fable-5",
+          "displayName": "Claude Fable 5",
+          "supportsThinking": true
+        },
+        {
+          "modelId": "claude-sonnet-4-6",
+          "displayName": "Claude Sonnet 4.6",
+          "supportsThinking": true
+        },
+        {
+          "modelId": "claude-opus-4-6",
+          "displayName": "Claude Opus 4.6",
+          "supportsThinking": true
+        }
+      ]
+    }
+  },
+  "models": {
+    "defaultModelId": "gemini-3.8-flash",
+    "filter": [
+      "gemini-3.8-flash",
+      "gemini-3.7-flash",
+      "gemini-3.1-pro-preview",
+      "claude-sonnet-5",
+      "claude-opus-5",
+      "claude-fable-5",
+      "claude-sonnet-4-6",
+      "claude-opus-4-6"
+    ],
+    "list": [
+      {
+        "modelId": "gemini-3.8-flash",
+        "displayName": "Gemini 3.8 Flash",
+        "supportsThinking": true
+      },
+      {
+        "modelId": "gemini-3.7-flash",
+        "displayName": "Gemini 3.7 Flash",
+        "supportsThinking": true
+      },
+      {
+        "modelId": "gemini-3.1-pro-preview",
+        "displayName": "Gemini 3.1 Pro",
+        "supportsThinking": true
+      },
+      {
+        "modelId": "claude-sonnet-5",
+        "displayName": "Claude Sonnet 5",
+        "supportsThinking": true
+      },
+      {
+        "modelId": "claude-opus-5",
+        "displayName": "Claude Opus 5",
+        "supportsThinking": true
+      },
+      {
+        "modelId": "claude-fable-5",
+        "displayName": "Claude Fable 5",
+        "supportsThinking": true
+      },
+      {
+        "modelId": "claude-sonnet-4-6",
+        "displayName": "Claude Sonnet 4.6",
+        "supportsThinking": true
+      },
+      {
+        "modelId": "claude-opus-4-6",
+        "displayName": "Claude Opus 4.6",
+        "supportsThinking": true
+      }
+    ]
+  },
+  "auth": {
+    "suppressInteractiveLogin": true
+  }
+}

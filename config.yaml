@@ -1,0 +1,192 @@
+# =============================================================================
+# Antigravity Enterprise Gateway — Official LiteLLM Proxy Configuration
+# =============================================================================
+# Docs: https://docs.litellm.ai/docs/proxy/configs
+#
+# Antigravity IDE and the `agy` CLI communicate using the Google GenAI protocol:
+#   POST /v1beta/models/{model}:streamGenerateContent?alt=sse
+#   POST /v1beta/models/{model}:generateContent
+#
+# LiteLLM Proxy natively exposes these endpoints:
+#   - Vertex AI Gemini models (`vertex_ai/gemini-*`) are routed natively.
+#   - Vertex AI Partner models (`vertex_ai/claude-*`) and third-party providers
+#     (`openai/*`, `anthropic/*`, `bedrock/*`) are automatically translated
+#     between Google GenAI format and Chat Completions / Messages format.
+# =============================================================================
+
+model_list:
+  # ---------------------------------------------------------------------------
+  # 1. Google Vertex AI — Gemini Models (Global Endpoint)
+  # ---------------------------------------------------------------------------
+  - model_name: gemini-3.8-flash
+    litellm_params:
+      model: vertex_ai/gemini-3.8-flash
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: gemini-3.7-flash
+    litellm_params:
+      model: vertex_ai/gemini-3.7-flash
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: gemini-3.1-pro-preview
+    litellm_params:
+      model: vertex_ai/gemini-3.1-pro-preview
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: gemini-3-flash-preview
+    litellm_params:
+      model: vertex_ai/gemini-3-flash-preview
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: gemini-2.5-pro
+    litellm_params:
+      model: vertex_ai/gemini-2.5-pro
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: vertex_ai/gemini-2.5-flash
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  # ---------------------------------------------------------------------------
+  # 2. Google Vertex AI — Anthropic Claude Models (Model Garden Global Endpoint)
+  # ---------------------------------------------------------------------------
+  - model_name: claude-sonnet-5
+    litellm_params:
+      model: vertex_ai/claude-sonnet-5
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: claude-opus-5
+    litellm_params:
+      model: vertex_ai/claude-opus-5
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: claude-fable-5
+    litellm_params:
+      model: vertex_ai/claude-fable-5
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: vertex_ai/claude-sonnet-4-6
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: vertex_ai/claude-opus-4-6
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: claude-sonnet-4-5@20250929
+    litellm_params:
+      model: vertex_ai/claude-sonnet-4-5@20250929
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  - model_name: claude-haiku-4-5@20251001
+    litellm_params:
+      model: vertex_ai/claude-haiku-4-5@20251001
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
+  # ---------------------------------------------------------------------------
+  # 3. Optional: Third-Party Providers (Uncomment to enable OpenAI / Bedrock)
+  # ---------------------------------------------------------------------------
+  # - model_name: gpt-4o
+  #   litellm_params:
+  #     model: openai/gpt-4o
+  #     api_key: os.environ/OPENAI_API_KEY
+  #
+  # - model_name: bedrock-claude-sonnet
+  #   litellm_params:
+  #     model: bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0
+  #     aws_region_name: us-east-1
+
+# =============================================================================
+# LiteLLM Router Settings — Aliases, Retries, and Automatic Fallbacks
+# =============================================================================
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  timeout: 600
+  allowed_fails: 3
+  cooldown_time: 30
+
+  # Shorthand and internal Antigravity model ID aliases -> canonical model groups
+  model_group_alias:
+    # Gemini aliases
+    gemini-3.8-flash-high: gemini-3.8-flash
+    gemini-3.8-flash-medium: gemini-3.8-flash
+    gemini-3.8-flash-low: gemini-3.8-flash
+    gemini-3.7-flash-high: gemini-3.7-flash
+    gemini-3.7-flash-medium: gemini-3.7-flash
+    gemini-3.7-flash-low: gemini-3.7-flash
+    gemini-3.6-flash: gemini-3.7-flash
+    gemini-3.5-flash: gemini-3.7-flash
+    gemini-3.1-pro: gemini-3.1-pro-preview
+    gemini-3.1-pro-high: gemini-3.1-pro-preview
+    gemini-3.1-pro-low: gemini-3.1-pro-preview
+    gemini-3.1-pro-low-thinking: gemini-3.1-pro-preview
+    gemini-3-flash: gemini-3-flash-preview
+    gemini-3-flash-agent: gemini-3-flash-preview
+    gemini-3.1-flash-lite: gemini-2.5-flash
+    gemini-3.1-flash-lite-preview: gemini-2.5-flash
+
+    # Claude shorthand & thinking aliases
+    sonnet-5: claude-sonnet-5
+    opus-5: claude-opus-5
+    fable-5: claude-fable-5
+    sonnet-4-6: claude-sonnet-4-6
+    opus-4-6: claude-opus-4-6
+    claude-sonnet-4-6-thinking: claude-sonnet-4-6
+    claude-opus-4-6-thinking: claude-opus-4-6
+    claude-sonnet-4-5: claude-sonnet-4-5@20250929
+    claude-sonnet-4-5-thinking: claude-sonnet-4-5@20250929
+    claude-haiku-4-5: claude-haiku-4-5@20251001
+    haiku-4-5: claude-haiku-4-5@20251001
+
+  # Automatic fallback chains if a model group hits quota (429) or transient 5xx
+  fallbacks:
+    - gemini-3.8-flash:
+        - gemini-3.7-flash
+        - gemini-2.5-flash
+    - gemini-3.7-flash:
+        - gemini-2.5-flash
+    - gemini-3.1-pro-preview:
+        - gemini-2.5-pro
+    - gemini-3-flash-preview:
+        - gemini-2.5-flash
+    - claude-fable-5:
+        - claude-opus-5
+        - claude-sonnet-5
+    - claude-opus-5:
+        - claude-sonnet-5
+        - claude-opus-4-6
+    - claude-sonnet-5:
+        - claude-sonnet-4-6
+
+# =============================================================================
+# LiteLLM Runtime Settings & Antigravity Protojson Compatibility Plugin
+# =============================================================================
+litellm_settings:
+  drop_params: true
+  modify_params: true
+  set_verbose: false
+  callbacks:
+    - callbacks.antigravity_compat
+
+# =============================================================================
+# General Proxy Settings — Authentication & Master Key
+# =============================================================================
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

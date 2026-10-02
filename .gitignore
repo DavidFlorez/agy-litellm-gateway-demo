@@ -1,0 +1,17 @@
+# Local generated Antigravity configuration (contains live gateway API key)
+admin_settings.json
+
+# Environment & credentials
+.env
+.env.*
+*.pem
+*.key
+service-account*.json
+
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/

@@ -1,0 +1,11 @@
+.git
+.gitignore
+admin_settings.json
+admin_settings.example.json
+README.md
+deploy.sh
+scripts/
+__pycache__/
+*.pyc
+.env
+.env.*
