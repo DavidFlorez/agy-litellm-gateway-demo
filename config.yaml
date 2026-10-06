@@ -84,6 +84,12 @@ model_list:
       vertex_project: os.environ/GCP_PROJECT_ID
       vertex_location: global
 
+  - model_name: grok-4.7
+    litellm_params:
+      model: vertex_ai/xai/grok-4.7
+      vertex_project: os.environ/GCP_PROJECT_ID
+      vertex_location: global
+
   # ---------------------------------------------------------------------------
   # 3. Optional: Additional Vertex AI / GEAP Gemini & Model Garden Models
   #    To add another model (e.g. Claude 4.6, Haiku 4.5, Gemini 2.5 Pro/Flash):
@@ -188,6 +194,10 @@ router_settings:
     claude-sonnet-5-thinking: claude-sonnet-5
     claude-opus-5-thinking: claude-opus-5
     claude-opus-5-5-thinking: claude-opus-5-5
+
+    # Grok aliases
+    grok-4-7: grok-4.7
+    grok-4.7-thinking: grok-4.7
 
   # Automatic fallback chains if a model group hits quota (429) or transient 5xx.
   # Only include models here that are enabled in your project.

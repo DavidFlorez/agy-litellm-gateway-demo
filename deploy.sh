@@ -41,6 +41,9 @@ cd "$SCRIPT_DIR"
 if ! command -v gcloud >/dev/null 2>&1 && [[ -x "${HOME}/google-cloud-sdk/bin/gcloud" ]]; then
   export PATH="${HOME}/google-cloud-sdk/bin:${PATH}"
 fi
+# Ensure standard user credentials and attribution environment are used
+unset CLOUDSDK_CONTAINER_USE_APPLICATION_DEFAULT_CREDENTIALS || true
+export CLOUDSDK_METRICS_ENVIRONMENT="datacloud.antigravity"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -254,7 +257,10 @@ fi
 #    no "list everything I enabled" API, so a model enabled there but missing from
 #    config.yaml will never show up until it is added to config.yaml and redeployed.
 echo -e "${GREEN}[6/8] Checking activation of models listed in config.yaml on Vertex AI / GEAP Model Garden (${PROJECT_ID})...${NC}"
-mapfile -t CONFIGURED_MODELS < <(
+CONFIGURED_MODELS=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && CONFIGURED_MODELS+=("$line")
+done < <(
   awk '/^[[:space:]]*-[[:space:]]*model_name:[[:space:]]*/ {
     line=$0
     sub(/.*model_name:[[:space:]]*/, "", line)
@@ -275,7 +281,10 @@ NOT_DEPLOYED_MODELS=()
 if [[ "$SYNC_MODELS_ONLY" == "true" ]]; then
   DEPLOYED_JSON=$(curl -s --max-time 15 "${SERVICE_URL}/v1/models" \
     -H "Authorization: Bearer ${ACTIVE_API_KEY}" || true)
-  mapfile -t DEPLOYED_MODELS < <(
+  DEPLOYED_MODELS=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && DEPLOYED_MODELS+=("$line")
+  done < <(
     printf '%s' "$DEPLOYED_JSON" \
       | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' \
       | sed 's/.*"\([^"]*\)"$/\1/'
@@ -353,6 +362,7 @@ model_display_name() {
     gemini-3.1-pro-preview)    echo "Gemini 3.1 Pro" ;;
     gemini-2.5-pro)            echo "Gemini 2.5 Pro" ;;
     gemini-2.5-flash)          echo "Gemini 2.5 Flash" ;;
+    grok-4.7)                  echo "Grok 4.7" ;;
     claude-sonnet-5)           echo "Claude Sonnet 5" ;;
     claude-opus-5)             echo "Claude Opus 5" ;;
     claude-opus-5-5)           echo "Claude Opus 5.5" ;;

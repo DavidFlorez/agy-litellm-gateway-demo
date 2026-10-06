@@ -457,6 +457,30 @@ def _apply_antigravity_patches() -> None:
         _patched_vertex_transform_generate_content_request
     )
 
+    # 4. Patch VertexAIPartnerModels for Grok / xAI models on Vertex AI
+    try:
+        from litellm.llms.vertex_ai.vertex_ai_partner_models.main import VertexAIPartnerModels
+
+        orig_is_partner = VertexAIPartnerModels.is_vertex_partner_model
+        orig_should_use_openai = VertexAIPartnerModels.should_use_openai_handler
+
+        @staticmethod
+        def _patched_is_partner(model: str) -> bool:
+            if "grok" in model or model.startswith("xai/"):
+                return True
+            return orig_is_partner(model)
+
+        @staticmethod
+        def _patched_should_use_openai(model: str) -> bool:
+            if "grok" in model or model.startswith("xai/"):
+                return True
+            return orig_should_use_openai(model)
+
+        VertexAIPartnerModels.is_vertex_partner_model = _patched_is_partner
+        VertexAIPartnerModels.should_use_openai_handler = _patched_should_use_openai
+    except Exception:
+        pass
+
     genai_transform_mod._antigravity_patched = True  # type: ignore[attr-defined]
 
 
